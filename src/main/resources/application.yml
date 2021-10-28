@@ -13,6 +13,10 @@ spring:
 datastax.astra:
   secure-connect-bundle: secure-connect.zip
 
+datadump.location:
+  author: src/main/resources/data/author_data.txt
+  works: src/main/resources/data/works_data.txt
+
 astra.db:
   id: 92cf57d4-27a1-44db-b393-8fe34c77624a-1
   region: asia-south1
