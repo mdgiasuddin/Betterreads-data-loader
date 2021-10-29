@@ -2,7 +2,10 @@ package com.example.betterreadsdataloader;
 
 import com.example.betterreadsdataloader.author.Author;
 import com.example.betterreadsdataloader.author.AuthorRepository;
+import com.example.betterreadsdataloader.book.Book;
+import com.example.betterreadsdataloader.book.BookRepository;
 import com.example.betterreadsdataloader.connection.DataStaxAstraProperties;
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,6 +21,11 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 @SpringBootApplication
@@ -26,6 +34,9 @@ public class BetterreadsDataLoaderApplication {
 
     @Autowired
     private AuthorRepository authorRepository;
+
+    @Autowired
+    private BookRepository bookRepository;
 
     @Value("${datadump.location.author}")
     private String authorDumpLocation;
@@ -61,10 +72,72 @@ public class BetterreadsDataLoaderApplication {
         }
     }
 
+    private void initBooks() {
+        Path path = Paths.get(worksDumpLocation);
+        DateTimeFormatter format = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSSSS");
+        try (Stream<String> lines = Files.lines(path)) {
+            lines.forEach(line -> {
+                String jsonString = line.substring(line.indexOf("{"));
+                try {
+                    JSONObject jsonObject = new JSONObject(jsonString);
+                    Book book = new Book();
+                    book.setId(jsonObject.optString("key").replace("/works/", ""));
+                    book.setName(jsonObject.optString("title"));
+                    JSONObject descriptionObj = jsonObject.optJSONObject("description");
+                    if (descriptionObj != null) {
+                        book.setDescription(descriptionObj.optString("value"));
+                    }
+
+                    JSONObject publishedObj = jsonObject.optJSONObject("created");
+                    if (publishedObj != null) {
+                        String dateStr = publishedObj.optString("value");
+                        book.setPublishedDate(LocalDate.parse(dateStr, format));
+                    }
+                    JSONArray coversArray = jsonObject.optJSONArray("covers");
+                    if (coversArray != null) {
+                        List<String> coverIds = new ArrayList<>();
+                        for (int i = 0; i < coversArray.length(); i++) {
+                            coverIds.add(coversArray.getString(i));
+                        }
+                        book.setCoverIds(coverIds);
+                    }
+
+                    JSONArray authorsArray = jsonObject.optJSONArray("authors");
+                    if (authorsArray != null) {
+                        List<String> authorIds = new ArrayList<>();
+                        for (int i = 0; i < authorsArray.length(); i++) {
+                            String authorId = authorsArray.getJSONObject(i).getJSONObject("author").getString("key")
+                                    .replace("/authors/", "");
+                            authorIds.add(authorId);
+                        }
+                        book.setAuthorIds(authorIds);
+
+                        List<String> authorNames = authorIds.stream().map(id -> authorRepository.findById(id))
+                                .map(optionalAuthor -> {
+                                    if (!optionalAuthor.isPresent()) return "Unknown author";
+                                    return optionalAuthor.get().getName();
+                                })
+                                .collect(Collectors.toList());
+
+                        book.setAuthorNames(authorNames);
+                    }
+
+                    System.out.println("Book: " + book.getName());
+                    bookRepository.save(book);
+
+                } catch (JSONException e) {
+                    e.printStackTrace();
+                }
+            });
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
     @PostConstruct
     public void start() {
-        System.out.println("Author location: " + authorDumpLocation);
-        initAuthors();
+//        initAuthors();
+//        initBooks();
     }
 
 
